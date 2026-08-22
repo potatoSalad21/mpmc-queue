@@ -50,7 +50,7 @@ public:
 
         while (true) {
             slot = &buffer[pos & mask];
-            std::size_t seq = slot->sequenece.load(std::memory_order_acquire);
+            std::size_t seq = slot->sequence.load(std::memory_order_acquire);
             std::intptr_t diff =
                 static_cast<std::intptr_t>(seq) - static_cast<std::intptr_t>(pos);
 
@@ -106,7 +106,7 @@ public:
             slot = &buffer[pos & mask];
             std::size_t seq = slot->sequence.load(std::memory_order_acquire);
             std::intptr_t diff =
-                static_cast<std::intptr_t>(seq) - static_cast<std::intptr_t>(pos);
+                static_cast<std::intptr_t>(seq) - static_cast<std::intptr_t>(pos + 1);
 
             if (diff == 0) {
                 if (dequeuePos.compare_exchange_weak(pos, pos+1, std::memory_order_relaxed)) {
@@ -128,7 +128,7 @@ public:
 
     std::size_t size_approx() const {
         std::size_t enq = enqueuePos.load(std::memory_order_relaxed);
-        std::size_t deq = enqueuePos.load(std::memory_order_relaxed);
+        std::size_t deq = dequeuePos.load(std::memory_order_relaxed);
 
         return enq >= deq ? enq - deq : 0;
     }
@@ -142,7 +142,7 @@ private:
         void construct(const T& val) { new (bytes) T(val); }
         void construct(T&& val) { new (bytes) T(std::move(val)); }
         T& get() {
-            return std::launder(reinterpret_cast<T*>(bytes));
+            return *std::launder(reinterpret_cast<T*>(bytes));
         }
         void destroy() { get().~T(); }
     };
