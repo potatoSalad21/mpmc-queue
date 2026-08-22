@@ -1,10 +1,13 @@
-#include <queue.hpp>
+#include "queue.hpp"
 
 #include <iostream>
 #include <cstdlib>
 #include <vector>
 #include <atomic>
 #include <thread>
+#include <random>
+
+namespace {
 
 constexpr std::size_t capacity = 32;
 constexpr int producerNum = 8;
@@ -16,8 +19,37 @@ struct Item {
     int value;
 };
 
-void producer_fn(MpmcBoundedQueue<Item> &queue, int id, std::atomic<bool> &startFlag) {
+// debug
+#ifndef MPMC_TEST_CHAOS
+#define MPMC_TEST_CHAOS 1
+#endif
 
+#if MPMC_TEST_CHAOS
+inline void rand_yield(std::minstd_rand &rng) {
+    if ((rng() & 0x3F) == 0)
+        std::this_thread::yield();
+}
+
+#else
+inline void rand_yield(std::minstd_rand &) {}
+#endif
+
+void producer_fn(MpmcBoundedQueue<Item> &queue, int id, std::atomic<bool> &startFlag) {
+    std::minstd_rand rng(static_cast<unsigned>(id) * 7919u + 1);
+
+    while (!startFlag.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    int base = id * itemsPerProducer;
+    for (int i = 0; i < itemsPerProducer; i++) {
+        Item item{base + i};
+
+        while (!queue.try_push(item))
+            rand_yield(rng);
+
+        rand_yield(rng);
+    }
 }
 
 void consumer_fn(MpmcBoundedQueue<Item> &queue,
@@ -25,6 +57,33 @@ void consumer_fn(MpmcBoundedQueue<Item> &queue,
                  std::atomic<int> &consumedCnt,
                  std::vector<std::atomic<bool>> &seen) {
 
+    std::minstd_rand rng(
+            static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(&queue)) + 17);
+
+    while (!startFlag.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    Item item{ };
+    while (consumedCnt.load(std::memory_order_relaxed) < totalItems) {
+        if (queue.try_pop(item)) {
+            int idx = item.value;
+            if (idx < 0 || idx >= totalItems) {
+                std::cerr << "[FATAL] popped out of range value " << idx << '\n';
+                std::abort();
+            }
+
+            bool dup = seen[idx].exchange(true, std::memory_order_relaxed);
+            if (dup) {
+                std::cerr << "[FATAL] duplicate value popped " << idx << '\n';
+                std::abort();
+            }
+
+            consumedCnt.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            rand_yield(rng);
+        }
+    }
 }
 
 bool run_once(int runIdx) {
@@ -86,6 +145,8 @@ bool run_once(int runIdx) {
 
     return true;
 }
+
+} // ns
 
 int main(int argc, char **argv) {
     int runs = 5;
