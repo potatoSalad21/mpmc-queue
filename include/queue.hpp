@@ -34,6 +34,13 @@ public:
     }
 
     ~MpmcBoundedQueue() {
+        std::size_t enq = enqueuePos.load(std::memory_order_relaxed);
+        std::size_t deq = dequeuePos.load(std::memory_order_relaxed);
+
+        for (std::size_t pos = deq; pos < enq; pos++) {
+            buffer[pos & mask].storage.destroy();
+        }
+
         for (std::size_t i = 0; i < cap; i++) {
             buffer[i].~Slot();
         }
