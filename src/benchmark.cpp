@@ -96,6 +96,25 @@ ThroughputResult run_throughput(
         while (queue.try_pop(val))
             total_popped.fetch_add(1, std::memory_order_relaxed);
     };
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < num_producers; i++) threads.emplace_back(producer);
+    for (int i = 0; i < num_consumers; i++) threads.emplace_back(consumer);
+
+    start.store(true, std::memory_order_release);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    auto t0 = Clock::now();
+    std::this_thread::sleep_for(duration);
+    stop.store(true, std::memory_order_relaxed);
+    auto t1 = Clock::now();
+
+    for (auto &t: threads) t.join();
+
+    double elapsed_sec = std::chrono::duration<double>(t1 - t0).count();
+    double ops = static_cast<double>(total_popped);
+
+    return ThroughputResult{ ops / elapsed_sec };
 }
 
 } // namespace
