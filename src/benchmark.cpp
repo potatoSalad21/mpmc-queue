@@ -1,9 +1,11 @@
 #include "queue.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <algorithm>
 
 namespace {
 
@@ -115,6 +117,57 @@ ThroughputResult run_throughput(
     double ops = static_cast<double>(total_popped);
 
     return ThroughputResult{ ops / elapsed_sec };
+}
+
+struct LatencyResult {
+    double p50_ns;
+    double p99_ns;
+    double p999_ns;
+};
+
+template <typename Adapter>
+LatencyResult run_latency(std::size_t capacity, int num_samples) {
+    Adapter queue(capacity);
+    std::vector<std::int64_t> samples;
+    samples.reserve(num_samples);
+
+    std::atomic<bool> start{ false };
+    std::atomic<bool> cons_done{ false };
+
+    std::thread consumer_th([&] {
+        while (!start.load(std::memory_order_acquire))
+            std::this_thread::yield();
+
+        int val;
+        int received = 0;
+        while (received < num_samples)
+            if (queue.try_pop(val)) received++;
+
+        cons_done.store(true, std::memory_order_release);
+    });
+
+    start.store(true, std::memory_order_release);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    for (int i = 0; i < num_samples; i++) {
+        auto t0 = Clock::now();
+        while (!queue.try_push(i)) {
+            // spin
+        }
+        auto t1 = Clock::now();
+        samples.push_back(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+    }
+
+    consumer_th.join();
+
+    std::sort(samples.begin(), samples.end());
+    auto pct = [&](double p) -> double {
+        std::size_t idx = static_cast<std::size_t>(p * (samples.size() - 1));
+        return static_cast<double>(samples[idx]);
+    };
+
+    return LatencyResult{pct(0.5), pct(0.99), pct(0.999)};
 }
 
 } // namespace
