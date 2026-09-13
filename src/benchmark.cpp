@@ -3,6 +3,7 @@
 #include <chrono>
 #include <mutex>
 #include <queue>
+#include <thread>
 
 namespace {
 
@@ -51,6 +52,51 @@ private:
     std::queue<T> queue_;
     std::size_t capacity_;
 };
+
+struct ThroughputResult {
+    double ops_per_sec;
+};
+
+template <typename Adapter>
+ThroughputResult run_throughput(
+        int num_producers,
+        int num_consumers,
+        std::size_t capacity,
+        std::chrono::milliseconds duration) {
+
+    Adapter queue(capacity);
+    std::atomic<bool> start{ false };
+    std::atomic<bool> stop{ false };
+    std::atomic<std::int64_t> total_pushed{ 0 };
+    std::atomic<std::int64_t> total_popped{ 0 };
+
+    auto producer = [&] {
+        while (!start.load(std::memory_order_acquire))
+            std::this_thread::yield();
+
+        int val = 0;
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (queue.try_push(val)) {
+                total_pushed.fetch_add(1, std::memory_order_relaxed);
+                val++;
+            }
+        }
+    };
+
+    auto consumer = [&] {
+        while (!start.load(std::memory_order_acquire))
+            std::this_thread::yield();
+
+        int val;
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (queue.try_pop(val))
+                total_popped.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        while (queue.try_pop(val))
+            total_popped.fetch_add(1, std::memory_order_relaxed);
+    };
+}
 
 } // namespace
 
