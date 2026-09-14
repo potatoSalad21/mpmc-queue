@@ -6,6 +6,7 @@
 #include <queue>
 #include <thread>
 #include <algorithm>
+#include <iostream>
 
 namespace {
 
@@ -168,6 +169,54 @@ LatencyResult run_latency(std::size_t capacity, int num_samples) {
     };
 
     return LatencyResult{pct(0.5), pct(0.99), pct(0.999)};
+}
+
+template <typename F>
+auto repeat_collect(F&& fn, int repeats) {
+    using ResultT = decltype(fn());
+    std::vector<ResultT> results;
+    for (int i = 0; i < repeats; i++)
+        results.push_back(fn());
+
+    return results;
+}
+
+void print_throuput_row(
+        const std::string &queue_name,
+        int producers, int consumers,
+        const std::vector<ThroughputResult> &runs) {
+
+    std::vector<double> vals;
+    for (auto &r: runs)
+        vals.push_back(r.ops_per_sec);
+    std::sort(vals.begin(), vals.end());
+    double median = vals[vals.size() / 2];
+
+    std::cout << queue_name << "," << producers << "," << consumers << ","
+              << "throughput," << vals.front() << "," << median << ","
+              << vals.back() << "\n";
+}
+
+void print_latency_row(
+        const std::string &queue_name,
+        const std::vector<LatencyResult> &runs) {
+
+    std::vector<double> p50s, p99s, p999s;
+    for (auto &r : runs) {
+        p50s.push_back(r.p50_ns);
+        p99s.push_back(r.p99_ns);
+        p999s.push_back(r.p999_ns);
+    }
+    std::sort(p50s.begin(), p50s.end());
+    std::sort(p99s.begin(), p99s.end());
+    std::sort(p999s.begin(), p999s.end());
+
+    std::cout << queue_name << ",1,1,latency_p50_ns," << p50s.front() << ","
+              << p50s[p50s.size() / 2] << "," << p50s.back() << "\n";
+    std::cout << queue_name << ",1,1,latency_p50_ns," << p99s.front() << ","
+              << p99s[p99s.size() / 2] << "," << p99s.back() << "\n";
+    std::cout << queue_name << ",1,1,latency_p50_ns," << p999s.front() << ","
+              << p50s[p999s.size() / 2] << "," << p999s.back() << "\n";
 }
 
 } // namespace
