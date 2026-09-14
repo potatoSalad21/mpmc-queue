@@ -181,7 +181,7 @@ auto repeat_collect(F&& fn, int repeats) {
     return results;
 }
 
-void print_throuput_row(
+void print_throughput_row(
         const std::string &queue_name,
         int producers, int consumers,
         const std::vector<ThroughputResult> &runs) {
@@ -222,6 +222,59 @@ void print_latency_row(
 } // namespace
 
 int main(int argc, char **argv) {
+    constexpr std::size_t kQueueCapacity = 4096;
+    constexpr int kRepeats = 5;
+    const auto kThroughputDuration = std::chrono::milliseconds(1000);
+    constexpr int kLatencySamples = 100000;
+
+    std::vector<int> thread_counts{ 1, 2, 4, 8 };
+    if (argc > 1) {
+        thread_counts.clear();
+        for (int i = 1; i < argc; i++)
+            thread_counts.push_back(std::atoi(argv[i]));
+    }
+
+    for (int n : thread_counts) {
+        {
+            auto runs = repeat_collect(
+                [&] {
+                    return run_throughput<MpmcAdapter<int>>(
+                        n, n, kQueueCapacity, kThroughputDuration);
+                },
+                kRepeats
+            );
+            print_throughput_row("lockfree_mpmc", n, n, runs);
+        }
+        {
+            auto runs = repeat_collect(
+                [&] {
+                    return run_throughput<MutexQueueAdapter<int>>(
+                        n, n, kQueueCapacity, kThroughputDuration);
+                },
+                kRepeats
+            );
+            print_throughput_row("mutex_queue", n, n, runs);
+        }
+    }
+
+    {
+        auto runs = repeat_collect(
+            [&] {
+                return run_latency<MpmcAdapter<int>>(kQueueCapacity, kLatencySamples);
+            },
+            kRepeats
+        );
+        print_latency_row("lockfree_mpmc", runs);
+    }
+    {
+        auto runs = repeat_collect(
+            [&] {
+                return run_latency<MutexQueueAdapter<int>>(kQueueCapacity, kLatencySamples);
+            },
+            kRepeats
+        );
+        print_latency_row("mutex_queue", runs);
+    }
 
     return 0;
 }
