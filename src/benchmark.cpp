@@ -213,10 +213,10 @@ void print_latency_row(
 
     std::cout << queue_name << ",1,1,latency_p50_ns," << p50s.front() << ","
               << p50s[p50s.size() / 2] << "," << p50s.back() << "\n";
-    std::cout << queue_name << ",1,1,latency_p50_ns," << p99s.front() << ","
+    std::cout << queue_name << ",1,1,latency_p99_ns," << p99s.front() << ","
               << p99s[p99s.size() / 2] << "," << p99s.back() << "\n";
-    std::cout << queue_name << ",1,1,latency_p50_ns," << p999s.front() << ","
-              << p50s[p999s.size() / 2] << "," << p999s.back() << "\n";
+    std::cout << queue_name << ",1,1,latency_p999_ns," << p999s.front() << ","
+              << p999s[p999s.size() / 2] << "," << p999s.back() << "\n";
 }
 
 } // namespace
@@ -226,6 +226,12 @@ int main(int argc, char **argv) {
     constexpr int kRepeats = 5;
     const auto kThroughputDuration = std::chrono::milliseconds(1000);
     constexpr int kLatencySamples = 100000;
+
+    unsigned hw_threads = std::thread::hardware_concurrency();
+    std::cerr << "hardware threads: " << hw_threads;
+    std::cerr << "\nkeep total threads at or below this, for meaningful resuls\n";
+
+    std::cout << "queue,producers,consumers,metric,min,median,max\n";
 
     std::vector<int> thread_counts{ 1, 2, 4, 8 };
     if (argc > 1) {
